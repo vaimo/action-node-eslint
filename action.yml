@@ -1,0 +1,57 @@
+name: 'Node - ESLint'
+description: 'This action is used to evaluate the quality of code by utilizing eslint.'
+author: Patryk Waluś <patryk.walus@vaimo.com>
+inputs:
+  full-analysis:
+    description: 'Perform full analysis if true, if false only analysis of modified files.'
+    required: true
+    default: 'true'
+runs:
+  using: "composite"
+  steps:
+    - name: Install dependencies
+      shell: bash
+      run: yarn install --frozen-lockfile
+
+    - name: Get modified files
+      if: github.event_name == 'pull_request' && inputs.full-analysis == 'false'
+      id: modified-files
+      uses: tj-actions/changed-files@v45
+      with:
+        files: |
+          **.js
+          **.ts
+          **.vue
+          **.tsx
+
+    - name: Run ESLint on modified files
+      shell: bash
+      if: github.event_name == 'pull_request' && inputs.full-analysis == 'false'
+      env:
+        ALL_CHANGED_FILES: ${{ steps.modified-files.outputs.all_changed_files }}
+        ALL_CHANGED_FILES_COUNT: ${{ steps.modified-files.outputs.all_changed_files_count }}
+      run: |
+        MODIFIED_FILES=$(echo "${ALL_CHANGED_FILES}" | tr '\n' ' ')
+        if [ -n "$WORKING_DIRECTORY" ]; then
+          MODIFIED_FILES=$(echo "$MODIFIED_FILES" | sed "s|$WORKING_DIRECTORY/||g")
+        fi
+        echo "MODIFIED_FILES=${MODIFIED_FILES}" >> $GITHUB_ENV
+
+        if [ "${ALL_CHANGED_FILES_COUNT}" -gt 0 ]; then
+          echo "HAS_MODIFIED_FILES=true" >> $GITHUB_ENV
+        else
+          echo "HAS_MODIFIED_FILES=false" >> $GITHUB_ENV
+        fi
+
+    - name: Code quality
+      shell: bash
+      run: |
+        if [ "${{ inputs.full-analysis }}" = "true" ]; then
+          yarn lint
+        else
+          if [ -z "${{ env.HAS_MODIFIED_FILES }}" ]; then
+            echo "No modified files detected."
+            exit 0
+          fi
+          yarn lint ${{ env.MODIFIED_FILES }}
+        fi
